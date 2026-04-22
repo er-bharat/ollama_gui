@@ -40,6 +40,7 @@
 #include <QMessageBox>
 #include <QFrame>
 #include <QTimer>
+#include <QTextDocument>
 
 #include <string_view>
 
@@ -326,6 +327,9 @@ public:
 		// Session list
 		m_listWidget->setAlternatingRowColors(true);
 		m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
+		m_listWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		m_listWidget->setTextElideMode(Qt::ElideRight);
+		m_listWidget->setResizeMode(QListView::Adjust);
 		layout->addWidget(m_listWidget);
 		
 		connect(newBtn, &QPushButton::clicked,
@@ -546,13 +550,17 @@ private slots:
 				
 				m_activeReply = m_manager->post(request, QJsonDocument{json}.toJson());
 				
-				// Append bot prefix without trailing newline
-				m_chatBox->append(QStringLiteral("Bot: "));
+				// Insert "Bot: " label, then record the position where streamed
+				// plain-text tokens will land so we can replace them with rendered
+				// Markdown once the full response is available.
+				m_chatBox->append(QStringLiteral("<b>Bot:</b> "));
 				{
 					QTextCursor c = m_chatBox->textCursor();
 					c.movePosition(QTextCursor::End);
+					// Step back past the newline append() adds so tokens land inline
 					c.deletePreviousChar();
 					m_chatBox->setTextCursor(c);
+					m_botBlockAnchor = c.position();
 				}
 				m_currentBotText.clear();
 				
@@ -595,19 +603,32 @@ private slots:
 			}
 		}
 		
-		// Final newline
-		QTextCursor cur = m_chatBox->textCursor();
-		cur.movePosition(QTextCursor::End);
-		cur.insertText(QStringLiteral("\n"));
-		
 		if (m_activeReply->error() != QNetworkReply::NoError &&
 			m_activeReply->error() != QNetworkReply::OperationCanceledError)
 		{
 			const QString errMsg =
 			QStringLiteral("[Error: ") + m_activeReply->errorString() +
 			QStringLiteral("]");
-			m_chatBox->append(errMsg);
 			m_currentBotText += errMsg;
+		}
+		
+		// Replace the streamed plain-text block with rendered Markdown.
+		// Select from the anchor (just after "Bot: ") to the document end,
+		// then insert the HTML fragment produced from the accumulated text.
+		if (!m_currentBotText.isEmpty()) {
+			QTextCursor cur = m_chatBox->textCursor();
+			cur.setPosition(m_botBlockAnchor);
+			cur.movePosition(QTextCursor::End, QTextCursor::KeepAnchor);
+			cur.removeSelectedText();
+			cur.insertHtml(markdownToHtml(m_currentBotText));
+			m_chatBox->setTextCursor(cur);
+		}
+		
+		// Ensure a blank line after the bot block
+		{
+			QTextCursor cur = m_chatBox->textCursor();
+			cur.movePosition(QTextCursor::End);
+			cur.insertText(QStringLiteral("\n"));
 		}
 		
 		// Persist bot reply
@@ -618,6 +639,8 @@ private slots:
 		m_session.updatedAt = QDateTime::currentDateTime();
 		emit sessionChanged(m_session);
 		
+		m_chatBox->verticalScrollBar()->setValue(
+			m_chatBox->verticalScrollBar()->maximum());
 		m_sendButton->setEnabled(true);
 		m_activeReply->deleteLater();
 		m_activeReply = nullptr;
@@ -647,6 +670,25 @@ private:
 			QStringLiteral("</b>"));
 	}
 	
+	// Convert a Markdown string to an HTML fragment suitable for insertHtml().
+	// Qt's QTextDocument::setMarkdown handles the common subset: headings,
+	// bold, italic, inline code, fenced code blocks, and bullet lists.
+	[[nodiscard]] static QString markdownToHtml(const QString &md)
+	{
+		QTextDocument doc;
+		doc.setMarkdown(md);
+		// toHtml() wraps in <html><body>…</body></html>; strip the envelope
+		// so we can embed the fragment inline in the chat document.
+		QString html = doc.toHtml();
+		const qsizetype bodyStart = html.indexOf(QStringLiteral("<body"));
+		const qsizetype bodyEnd   = html.lastIndexOf(QStringLiteral("</body>"));
+		if (bodyStart != -1 && bodyEnd != -1) {
+			const qsizetype contentStart = html.indexOf(QLatin1Char('>'), bodyStart) + 1;
+			html = html.mid(contentStart, bodyEnd - contentStart).trimmed();
+		}
+		return html;
+	}
+	
 	void appendToken(const QString &token)
 	{
 		QTextCursor cur = m_chatBox->textCursor();
@@ -665,8 +707,19 @@ private:
 				m_chatBox->append(
 					QStringLiteral("<b>You:</b> ") + msg.text.toHtmlEscaped());
 			} else {
-				m_chatBox->append(
-					QStringLiteral("Bot: ") + msg.text.toHtmlEscaped());
+				// Bot messages are stored as raw Markdown; render them.
+				m_chatBox->append(QStringLiteral("<b>Bot:</b> "));
+				{
+					QTextCursor c = m_chatBox->textCursor();
+					c.movePosition(QTextCursor::End);
+					c.deletePreviousChar(); // remove trailing newline from append()
+					c.insertHtml(markdownToHtml(msg.text));
+					m_chatBox->setTextCursor(c);
+				}
+				// Blank line after each bot block
+				QTextCursor c = m_chatBox->textCursor();
+				c.movePosition(QTextCursor::End);
+				c.insertText(QStringLiteral("\n"));
 			}
 		}
 		// Scroll to bottom
@@ -682,6 +735,7 @@ private:
 	QNetworkAccessManager *m_manager      = nullptr;
 	QNetworkReply         *m_activeReply  = nullptr;
 	QString                m_currentBotText;
+	int                    m_botBlockAnchor = 0; // position just after "Bot: " label
 };
 
 // ---------------------------------------------------------------------------
