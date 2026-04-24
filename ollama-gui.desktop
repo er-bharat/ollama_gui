@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Ollama-GUI
+Comment=Graphical interface for Ollama in Qt6
+Exec=ollama_gui
+Icon=/usr/local/share/pixmaps/ollama-gui.png
+Terminal=false
+Type=Application
+Categories=Development;AI;
+StartupNotify=true

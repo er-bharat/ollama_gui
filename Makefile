@@ -12,11 +12,11 @@ CXXFLAGS := -std=c++20 -fPIC \
 QT_CFLAGS := $(shell pkg-config --cflags Qt6Widgets Qt6Network | sed 's/-I/-isystem /g')
 QT_LIBS   := $(shell pkg-config --libs   Qt6Widgets Qt6Network)
 
-# Raw Qt flags without -isystem substitution — used in compile_commands.json
-# so clangd/LSP can resolve Qt headers properly
 QT_CFLAGS_RAW := $(shell pkg-config --cflags Qt6Widgets Qt6Network)
 
-.PHONY: all clean compile_commands
+PREFIX ?= /usr/local
+
+.PHONY: all clean compile_commands install uninstall
 
 all: compile_commands $(TARGET)
 
@@ -26,7 +26,6 @@ main.moc: $(SRC)
 $(TARGET): $(SRC) main.moc
 	$(CXX) $(CXXFLAGS) $(QT_CFLAGS) $< -o $@ $(QT_LIBS)
 
-# Generate compile_commands.json for clangd / LSP / static analysers
 compile_commands: compile_commands.json
 
 compile_commands.json: $(SRC) Makefile
@@ -44,6 +43,16 @@ compile_commands.json: $(SRC) Makefile
 	@printf '  }\n' >> $@
 	@printf ']\n' >> $@
 	@echo "Generated compile_commands.json"
+
+install: $(TARGET)
+	install -Dm755 $(TARGET) $(PREFIX)/bin/$(TARGET)
+	install -Dm644 ollama-gui.desktop $(PREFIX)/share/applications/ollama-gui.desktop
+	install -Dm644 ollama-gui.png $(PREFIX)/share/pixmaps/ollama-gui.png
+
+uninstall:
+	rm -f $(PREFIX)/bin/$(TARGET)
+	rm -f $(PREFIX)/share/applications/ollama-gui.desktop
+	rm -f $(PREFIX)/share/pixmaps/ollama-gui.png
 
 clean:
 	rm -f main.moc $(TARGET) compile_commands.json
