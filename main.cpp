@@ -12,7 +12,6 @@
 #include <QWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
-#include <QSplitter>
 #include <QTextEdit>
 #include <QLineEdit>
 #include <QPushButton>
@@ -44,6 +43,7 @@
 #include <QProcess>
 #include <QTcpSocket>
 #include <QThread>
+#include <QSplitter>
 #include <string_view>
 
 // ---------------------------------------------------------------------------
@@ -55,11 +55,10 @@ namespace OllamaGui {
 	inline constexpr std::string_view kDefaultModel   = "smollm:360m";
 	inline constexpr std::string_view kApiTagsUrl     = "http://localhost:11434/api/tags";
 	inline constexpr std::string_view kApiGenerateUrl = "http://localhost:11434/api/generate";
-	inline constexpr int kMinPickerWidth  = 360;
-	inline constexpr int kWindowWidth     = 900;
-	inline constexpr int kWindowHeight    = 680;
-	inline constexpr int kSwitchBtnWidth  = 120;
-	inline constexpr int kSidebarWidth    = 210;
+	inline constexpr int kMinPickerWidth = 360;
+	inline constexpr int kWindowWidth    = 920;
+	inline constexpr int kWindowHeight   = 680;
+	inline constexpr int kSidebarWidth   = 220;
 	
 } // namespace OllamaGui
 
@@ -68,7 +67,7 @@ namespace OllamaGui {
 // ---------------------------------------------------------------------------
 
 struct ChatMessage {
-	QString role;    // "user" or "bot"
+	QString role; // "user" or "bot"
 	QString text;
 };
 
@@ -152,7 +151,6 @@ public:
 			if (doc.isNull() || !doc.isObject()) continue;
 			list.append(Session::fromJson(doc.object()));
 		}
-		// Sort newest-first
 		std::sort(list.begin(), list.end(), [](const Session &a, const Session &b) {
 			return a.updatedAt > b.updatedAt;
 		});
@@ -193,8 +191,10 @@ public:
 		setMinimumWidth(OllamaGui::kMinPickerWidth);
 		
 		auto *layout = new QVBoxLayout{this};
+		layout->setSpacing(8);
+		layout->setContentsMargins(12, 12, 12, 12);
 		
-		m_statusLabel->setEnabled(false); // grayed out via palette, no hardcoded color
+		m_statusLabel->setEnabled(false);
 		layout->addWidget(m_statusLabel);
 		
 		m_listWidget->setAlternatingRowColors(true);
@@ -208,16 +208,16 @@ public:
 			QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this};
 			layout->addWidget(buttons);
 			
-			connect(buttons,      &QDialogButtonBox::accepted,
-					this,         &ModelPickerDialog::accept);
-			connect(buttons,      &QDialogButtonBox::rejected,
-					this,         &QDialog::reject);
-			connect(m_listWidget, &QListWidget::itemDoubleClicked,
-					this,         &ModelPickerDialog::accept);
-			connect(m_listWidget, &QListWidget::currentTextChanged,
-					m_manualEntry,&QLineEdit::setText);
-			connect(m_manualEntry,&QLineEdit::textChanged,
-					this,         &ModelPickerDialog::onManualTextChanged);
+			connect(buttons,       &QDialogButtonBox::accepted,
+					this,          &ModelPickerDialog::accept);
+			connect(buttons,       &QDialogButtonBox::rejected,
+					this,          &QDialog::reject);
+			connect(m_listWidget,  &QListWidget::itemDoubleClicked,
+					this,          &ModelPickerDialog::accept);
+			connect(m_listWidget,  &QListWidget::currentTextChanged,
+					m_manualEntry, &QLineEdit::setText);
+			connect(m_manualEntry, &QLineEdit::textChanged,
+					this,          &ModelPickerDialog::onManualTextChanged);
 			
 			fetchModels();
 	}
@@ -256,8 +256,8 @@ private slots:
 			return;
 		}
 		
-		const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
-		const QJsonArray models = doc.object()[QStringLiteral("models")].toArray();
+		const QJsonDocument doc    = QJsonDocument::fromJson(reply->readAll());
+		const QJsonArray    models = doc.object()[QStringLiteral("models")].toArray();
 		
 		if (models.isEmpty()) {
 			m_statusLabel->setText(
@@ -311,31 +311,53 @@ public:
 	{
 		setFixedWidth(OllamaGui::kSidebarWidth);
 		
-		auto *layout = new QVBoxLayout{this};
-		layout->setContentsMargins(6, 8, 6, 8);
-		layout->setSpacing(6);
+		auto *outerLayout = new QVBoxLayout{this};
+		outerLayout->setContentsMargins(0, 0, 0, 0);
+		outerLayout->setSpacing(0);
 		
-		// Header label
-		auto *header = new QLabel{tr("Sessions"), this};
-		QFont hf = header->font();
-		hf.setBold(true);
-		header->setFont(hf);
-		layout->addWidget(header);
+		// ── Header bar: matches chat pane header exactly ──────────────────
+		// Uses a plain QWidget so it naturally picks up the window background.
+		auto *headerWidget = new QWidget{this};
+		// Fixed height matches the chat pane's own header widget below.
+		headerWidget->setFixedHeight(40);
+		auto *headerLayout = new QHBoxLayout{headerWidget};
+		// Left/right margins mirror the chat header (8 px each side).
+		headerLayout->setContentsMargins(8, 0, 8, 0);
+		headerLayout->setSpacing(0);
 		
-		// New session button
-		auto *newBtn = new QPushButton{tr("New session"), this};
-		layout->addWidget(newBtn);
+		auto *titleLabel = new QLabel{tr("Sessions"), headerWidget};
+		QFont f = titleLabel->font();
+		f.setBold(true);
+		titleLabel->setFont(f);
+		headerLayout->addWidget(titleLabel);
 		
-		// Session list
+		outerLayout->addWidget(headerWidget);
+		
+		// ── Native horizontal separator ───────────────────────────────────
+		auto *topSep = new QFrame{this};
+		topSep->setFrameShape(QFrame::HLine);
+		topSep->setFrameShadow(QFrame::Sunken);
+		outerLayout->addWidget(topSep);
+		
+		// ── New session button ────────────────────────────────────────────
+		auto *btnWidget = new QWidget{this};
+		auto *btnLayout = new QHBoxLayout{btnWidget};
+		btnLayout->setContentsMargins(8, 6, 8, 6);
+		auto *newBtn = new QPushButton{tr("New session"), btnWidget};
+		btnLayout->addWidget(newBtn);
+		outerLayout->addWidget(btnWidget);
+		
+		// ── Session list ──────────────────────────────────────────────────
 		m_listWidget->setAlternatingRowColors(true);
 		m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
 		m_listWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 		m_listWidget->setTextElideMode(Qt::ElideRight);
 		m_listWidget->setResizeMode(QListView::Adjust);
-		layout->addWidget(m_listWidget);
+		m_listWidget->setFrameShape(QFrame::NoFrame); // flush with sidebar
+		outerLayout->addWidget(m_listWidget);
 		
-		connect(newBtn, &QPushButton::clicked,
-				this,   &SessionSidebar::onNewSession);
+		connect(newBtn,       &QPushButton::clicked,
+				this,         &SessionSidebar::onNewSession);
 		connect(m_listWidget, &QListWidget::currentItemChanged,
 				this,         &SessionSidebar::onItemChanged);
 		connect(m_listWidget, &QListWidget::customContextMenuRequested,
@@ -344,18 +366,16 @@ public:
 		reload();
 	}
 	
-	// Reload list from store and re-select the given session id (or first).
 	void reload(const QString &selectId = {})
 	{
 		const QVector<Session> sessions = m_store->loadAll();
 		
-		// Block signals while rebuilding to avoid spurious currentItemChanged
 		m_listWidget->blockSignals(true);
 		m_listWidget->clear();
 		int selectRow = 0;
 		for (int i = 0; i < sessions.size(); ++i) {
-			const Session &s = sessions[i];
-			auto *item = new QListWidgetItem{s.title};
+			const Session &s   = sessions[i];
+			auto          *item = new QListWidgetItem{s.title};
 			item->setData(Qt::UserRole, s.id);
 			item->setToolTip(s.model + QStringLiteral("\n") +
 			s.updatedAt.toString(QStringLiteral("yyyy-MM-dd hh:mm")));
@@ -365,12 +385,10 @@ public:
 		}
 		m_listWidget->blockSignals(false);
 		
-		if (m_listWidget->count() > 0) {
+		if (m_listWidget->count() > 0)
 			m_listWidget->setCurrentRow(selectRow);
-		}
 	}
 	
-	// Highlight the given session without emitting sessionSelected
 	void setActiveId(const QString &id)
 	{
 		m_listWidget->blockSignals(true);
@@ -386,12 +404,11 @@ public:
 signals:
 	void sessionSelected(const QString &id);
 	void newSessionRequested();
+	void renameRequested(const QString &id, const QString &newTitle);
+	void deleteRequested(const QString &id);
 	
 private slots:
-	void onNewSession()
-	{
-		emit newSessionRequested();
-	}
+	void onNewSession() { emit newSessionRequested(); }
 	
 	void onItemChanged(QListWidgetItem *current, QListWidgetItem * /*previous*/)
 	{
@@ -405,20 +422,19 @@ private slots:
 		if (!item) return;
 		const QString id = item->data(Qt::UserRole).toString();
 		
-		QMenu menu{this};
+		QMenu    menu{this};
 		QAction *renameAct = menu.addAction(tr("Rename\xe2\x80\xa6"));
 		QAction *deleteAct = menu.addAction(tr("Delete"));
 		deleteAct->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
 		
 		QAction *chosen = menu.exec(m_listWidget->mapToGlobal(pos));
 		if (chosen == renameAct) {
-			bool ok = false;
+			bool          ok       = false;
 			const QString newTitle = QInputDialog::getText(
 				this, tr("Rename session"), tr("New name:"),
 														   QLineEdit::Normal, item->text(), &ok);
-			if (ok && !newTitle.trimmed().isEmpty()) {
+			if (ok && !newTitle.trimmed().isEmpty())
 				emit renameRequested(id, newTitle.trimmed());
-			}
 		} else if (chosen == deleteAct) {
 			const auto btn = QMessageBox::question(
 				this, tr("Delete session"),
@@ -427,10 +443,6 @@ private slots:
 				emit deleteRequested(id);
 		}
 	}
-	
-signals:
-	void renameRequested(const QString &id, const QString &newTitle);
-	void deleteRequested(const QString &id);
 	
 private:
 	SessionStore *m_store;
@@ -455,33 +467,50 @@ public:
 	{
 		auto *mainLayout = new QVBoxLayout{this};
 		mainLayout->setContentsMargins(0, 0, 0, 0);
+		mainLayout->setSpacing(0);
 		
-		// Header bar
-		auto *headerLayout = new QHBoxLayout{};
-		headerLayout->setContentsMargins(8, 6, 8, 0);
-		m_modelLabel->setStyleSheet(QStringLiteral("font-size: 13px;"));
-		auto *switchBtn = new QPushButton{tr("Switch model\xe2\x80\xa6"), this};
-		switchBtn->setFixedWidth(OllamaGui::kSwitchBtnWidth);
+		// ── Header bar: same fixed height as sidebar header ───────────────
+		auto *headerWidget = new QWidget{this};
+		headerWidget->setFixedHeight(40);
+		auto *headerLayout = new QHBoxLayout{headerWidget};
+		// Mirror the sidebar header's 8 px side margins.
+		headerLayout->setContentsMargins(8, 0, 8, 0);
+		headerLayout->setSpacing(8);
+		
 		headerLayout->addWidget(m_modelLabel);
 		headerLayout->addStretch();
-		headerLayout->addWidget(switchBtn);
-		mainLayout->addLayout(headerLayout);
 		
-		// Native horizontal separator
+		auto *switchBtn = new QPushButton{tr("Switch model\xe2\x80\xa6"), this};
+		headerLayout->addWidget(switchBtn);
+		
+		mainLayout->addWidget(headerWidget);
+		
+		// ── Native horizontal separator ───────────────────────────────────
 		auto *sep = new QFrame{this};
 		sep->setFrameShape(QFrame::HLine);
 		sep->setFrameShadow(QFrame::Sunken);
 		mainLayout->addWidget(sep);
 		
+		// ── Chat display ──────────────────────────────────────────────────
 		m_chatBox->setReadOnly(true);
-		mainLayout->addWidget(m_chatBox);
+		m_chatBox->setFrameShape(QFrame::NoFrame);
+		mainLayout->addWidget(m_chatBox, 1);
 		
-		auto *inputLayout = new QHBoxLayout{};
-		inputLayout->setContentsMargins(8, 4, 8, 8);
+		// ── Input row ─────────────────────────────────────────────────────
+		auto *inputSep = new QFrame{this};
+		inputSep->setFrameShape(QFrame::HLine);
+		inputSep->setFrameShadow(QFrame::Sunken);
+		mainLayout->addWidget(inputSep);
+		
+		auto *inputWidget = new QWidget{this};
+		auto *inputLayout = new QHBoxLayout{inputWidget};
+		inputLayout->setContentsMargins(8, 6, 8, 6);
+		inputLayout->setSpacing(6);
+		
 		m_inputField->setPlaceholderText(tr("Type a message\xe2\x80\xa6"));
 		inputLayout->addWidget(m_inputField);
 		inputLayout->addWidget(m_sendButton);
-		mainLayout->addLayout(inputLayout);
+		mainLayout->addWidget(inputWidget);
 		
 		connect(m_sendButton, &QPushButton::clicked,
 				this,         &ChatPane::sendMessage);
@@ -491,7 +520,6 @@ public:
 				this,         &ChatPane::pickModel);
 	}
 	
-	// Load a session into the pane (replaces current content)
 	void loadSession(const Session &s)
 	{
 		m_session = s;
@@ -501,16 +529,10 @@ public:
 	
 	[[nodiscard]] const Session &session() const { return m_session; }
 	
-	// Called externally to rename the active session
-	void setTitle(const QString &title)
-	{
-		m_session.title = title;
-	}
+	void setTitle(const QString &title) { m_session.title = title; }
 	
 signals:
-	// Emitted whenever the session has been modified and should be saved
 	void sessionChanged(const Session &session);
-	// Emitted when user switches model via the picker
 	void modelChanged(const QString &model);
 	
 private slots:
@@ -522,23 +544,19 @@ private slots:
 		if (m_activeReply && m_activeReply->isRunning())
 			m_activeReply->abort();
 		
-		// If this is the first message, use it as the session title
 		if (m_session.messages.isEmpty()) {
 			m_session.title = userText.left(40) +
 			(userText.size() > 40 ? QStringLiteral("\xe2\x80\xa6") : QString{});
 		}
 		
-		// Store and render user message
 		m_session.messages.append({QStringLiteral("user"), userText});
 		m_chatBox->append(QStringLiteral("<b>You:</b> ") + userText.toHtmlEscaped());
 		m_inputField->clear();
 		m_sendButton->setEnabled(false);
 		
-		// Save before sending so the session title update is persisted
 		m_session.updatedAt = QDateTime::currentDateTime();
 		emit sessionChanged(m_session);
 		
-		// Build and send the HTTP request
 		QNetworkRequest request{
 			QUrl{QString::fromLatin1(OllamaGui::kApiGenerateUrl.data(),
 				static_cast<qsizetype>(OllamaGui::kApiGenerateUrl.size()))}};
@@ -552,14 +570,10 @@ private slots:
 				
 				m_activeReply = m_manager->post(request, QJsonDocument{json}.toJson());
 				
-				// Insert "Bot: " label, then record the position where streamed
-				// plain-text tokens will land so we can replace them with rendered
-				// Markdown once the full response is available.
 				m_chatBox->append(QStringLiteral("<b>Bot:</b> "));
 				{
 					QTextCursor c = m_chatBox->textCursor();
 					c.movePosition(QTextCursor::End);
-					// Step back past the newline append() adds so tokens land inline
 					c.deletePreviousChar();
 					m_chatBox->setTextCursor(c);
 					m_botBlockAnchor = c.position();
@@ -576,12 +590,11 @@ private slots:
 	{
 		if (!m_activeReply) return;
 		while (m_activeReply->canReadLine()) {
-			const QByteArray line = m_activeReply->readLine().trimmed();
+			const QByteArray    line = m_activeReply->readLine().trimmed();
 			if (line.isEmpty()) continue;
-			const QJsonDocument doc = QJsonDocument::fromJson(line);
+			const QJsonDocument doc  = QJsonDocument::fromJson(line);
 			if (doc.isNull()) continue;
-			const QString token =
-			doc.object()[QStringLiteral("response")].toString();
+			const QString token = doc.object()[QStringLiteral("response")].toString();
 			appendToken(token);
 			m_currentBotText += token;
 		}
@@ -591,14 +604,12 @@ private slots:
 	{
 		if (!m_activeReply) return;
 		
-		// Drain remaining lines
 		while (m_activeReply->canReadLine()) {
-			const QByteArray line = m_activeReply->readLine().trimmed();
+			const QByteArray    line = m_activeReply->readLine().trimmed();
 			if (line.isEmpty()) continue;
-			const QJsonDocument doc = QJsonDocument::fromJson(line);
+			const QJsonDocument doc  = QJsonDocument::fromJson(line);
 			if (doc.isNull()) continue;
-			const QString token =
-			doc.object()[QStringLiteral("response")].toString();
+			const QString token = doc.object()[QStringLiteral("response")].toString();
 			if (!token.isEmpty()) {
 				appendToken(token);
 				m_currentBotText += token;
@@ -614,9 +625,6 @@ private slots:
 			m_currentBotText += errMsg;
 		}
 		
-		// Replace the streamed plain-text block with rendered Markdown.
-		// Select from the anchor (just after "Bot: ") to the document end,
-		// then insert the HTML fragment produced from the accumulated text.
 		if (!m_currentBotText.isEmpty()) {
 			QTextCursor cur = m_chatBox->textCursor();
 			cur.setPosition(m_botBlockAnchor);
@@ -626,14 +634,12 @@ private slots:
 			m_chatBox->setTextCursor(cur);
 		}
 		
-		// Ensure a blank line after the bot block
 		{
 			QTextCursor cur = m_chatBox->textCursor();
 			cur.movePosition(QTextCursor::End);
 			cur.insertText(QStringLiteral("\n"));
 		}
 		
-		// Persist bot reply
 		if (!m_currentBotText.isEmpty()) {
 			m_session.messages.append({QStringLiteral("bot"), m_currentBotText});
 			m_currentBotText.clear();
@@ -667,25 +673,19 @@ private:
 	void updateModelLabel()
 	{
 		m_modelLabel->setText(
-			QStringLiteral("Model: <b>") +
-			m_session.model.toHtmlEscaped() +
-			QStringLiteral("</b>"));
+			tr("Model: ") + m_session.model);
 	}
 	
-	// Convert a Markdown string to an HTML fragment suitable for insertHtml().
-	// Qt's QTextDocument::setMarkdown handles the common subset: headings,
-	// bold, italic, inline code, fenced code blocks, and bullet lists.
 	[[nodiscard]] static QString markdownToHtml(const QString &md)
 	{
 		QTextDocument doc;
 		doc.setMarkdown(md);
-		// toHtml() wraps in <html><body>…</body></html>; strip the envelope
-		// so we can embed the fragment inline in the chat document.
-		QString html = doc.toHtml();
+		QString      html      = doc.toHtml();
 		const qsizetype bodyStart = html.indexOf(QStringLiteral("<body"));
 		const qsizetype bodyEnd   = html.lastIndexOf(QStringLiteral("</body>"));
 		if (bodyStart != -1 && bodyEnd != -1) {
-			const qsizetype contentStart = html.indexOf(QLatin1Char('>'), bodyStart) + 1;
+			const qsizetype contentStart =
+			html.indexOf(QLatin1Char('>'), bodyStart) + 1;
 			html = html.mid(contentStart, bodyEnd - contentStart).trimmed();
 		}
 		return html;
@@ -700,7 +700,6 @@ private:
 			m_chatBox->verticalScrollBar()->maximum());
 	}
 	
-	// Rebuild the chatbox from m_session.messages (used when switching sessions)
 	void rebuildChatBox()
 	{
 		m_chatBox->clear();
@@ -709,35 +708,32 @@ private:
 				m_chatBox->append(
 					QStringLiteral("<b>You:</b> ") + msg.text.toHtmlEscaped());
 			} else {
-				// Bot messages are stored as raw Markdown; render them.
 				m_chatBox->append(QStringLiteral("<b>Bot:</b> "));
 				{
 					QTextCursor c = m_chatBox->textCursor();
 					c.movePosition(QTextCursor::End);
-					c.deletePreviousChar(); // remove trailing newline from append()
+					c.deletePreviousChar();
 					c.insertHtml(markdownToHtml(msg.text));
 					m_chatBox->setTextCursor(c);
 				}
-				// Blank line after each bot block
 				QTextCursor c = m_chatBox->textCursor();
 				c.movePosition(QTextCursor::End);
 				c.insertText(QStringLiteral("\n"));
 			}
 		}
-		// Scroll to bottom
 		m_chatBox->verticalScrollBar()->setValue(
 			m_chatBox->verticalScrollBar()->maximum());
 	}
 	
 	Session                m_session;
-	QTextEdit             *m_chatBox      = nullptr;
-	QLineEdit             *m_inputField   = nullptr;
-	QPushButton           *m_sendButton   = nullptr;
-	QLabel                *m_modelLabel   = nullptr;
-	QNetworkAccessManager *m_manager      = nullptr;
-	QNetworkReply         *m_activeReply  = nullptr;
+	QTextEdit             *m_chatBox       = nullptr;
+	QLineEdit             *m_inputField    = nullptr;
+	QPushButton           *m_sendButton    = nullptr;
+	QLabel                *m_modelLabel    = nullptr;
+	QNetworkAccessManager *m_manager       = nullptr;
+	QNetworkReply         *m_activeReply   = nullptr;
 	QString                m_currentBotText;
-	int                    m_botBlockAnchor = 0; // position just after "Bot: " label
+	int                    m_botBlockAnchor = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -762,59 +758,43 @@ public:
 		rootLayout->setContentsMargins(0, 0, 0, 0);
 		rootLayout->setSpacing(0);
 		
-		// Sidebar panel
-		auto *sideFrame = new QFrame{this};
-		sideFrame->setFrameShape(QFrame::NoFrame);
-		auto *sideLayout = new QVBoxLayout{sideFrame};
-		sideLayout->setContentsMargins(0, 0, 0, 0);
-		sideLayout->addWidget(m_sidebar);
+		rootLayout->addWidget(m_sidebar);
 		
-		// Native vertical line separator
+		// Native vertical separator between sidebar and chat pane
 		auto *divider = new QFrame{this};
 		divider->setFrameShape(QFrame::VLine);
 		divider->setFrameShadow(QFrame::Sunken);
-		
-		rootLayout->addWidget(sideFrame);
 		rootLayout->addWidget(divider);
+		
 		rootLayout->addWidget(m_chatPane, 1);
 		
-		// Sidebar signals
-		connect(m_sidebar, &SessionSidebar::sessionSelected,
-				this,      &MainWindow::onSessionSelected);
-		connect(m_sidebar, &SessionSidebar::newSessionRequested,
-				this,      &MainWindow::onNewSession);
-		connect(m_sidebar, &SessionSidebar::renameRequested,
-				this,      &MainWindow::onRenameSession);
-		connect(m_sidebar, &SessionSidebar::deleteRequested,
-				this,      &MainWindow::onDeleteSession);
-		
-		// Chat pane signals
+		connect(m_sidebar,  &SessionSidebar::sessionSelected,
+				this,       &MainWindow::onSessionSelected);
+		connect(m_sidebar,  &SessionSidebar::newSessionRequested,
+				this,       &MainWindow::onNewSession);
+		connect(m_sidebar,  &SessionSidebar::renameRequested,
+				this,       &MainWindow::onRenameSession);
+		connect(m_sidebar,  &SessionSidebar::deleteRequested,
+				this,       &MainWindow::onDeleteSession);
 		connect(m_chatPane, &ChatPane::sessionChanged,
 				this,       &MainWindow::onSessionChanged);
 		
-		// Bootstrap: load existing sessions or create the first one
 		const QVector<Session> sessions = m_store.loadAll();
 		if (sessions.isEmpty()) {
 			createAndLoadNewSession();
 		} else {
-			// sidebar already shows the first row; load it
 			loadSession(sessions.first());
 			m_sidebar->setActiveId(sessions.first().id);
 		}
 	}
 	
 private slots:
-	void onNewSession()
-	{
-		createAndLoadNewSession();
-	}
+	void onNewSession() { createAndLoadNewSession(); }
 	
 	void onSessionSelected(const QString &id)
 	{
-		// Save current if dirty before switching
-		if (!m_currentSessionId.isEmpty()) {
+		if (!m_currentSessionId.isEmpty())
 			m_store.save(m_chatPane->session());
-		}
 		
 		const QVector<Session> sessions = m_store.loadAll();
 		for (const auto &s : sessions) {
@@ -828,7 +808,6 @@ private slots:
 	void onSessionChanged(const Session &session)
 	{
 		m_store.save(session);
-		// Refresh sidebar title in-place without changing selection
 		m_sidebar->reload(session.id);
 	}
 	
@@ -853,7 +832,6 @@ private slots:
 		
 		const QVector<Session> remaining = m_store.loadAll();
 		if (remaining.isEmpty()) {
-			// Create a fresh session so the UI is never empty
 			createAndLoadNewSession();
 		} else {
 			const bool deletedCurrent = (id == m_currentSessionId);
@@ -885,31 +863,27 @@ private:
 	QString         m_initialModel;
 	QString         m_currentSessionId;
 };
+
 // ---------------------------------------------------------------------------
 // Helpers — Ollama process management
 // ---------------------------------------------------------------------------
 
 namespace OllamaGui {
 	
-	// Returns true if Ollama's HTTP port (11434) is already accepting connections.
 	[[nodiscard]] inline bool isOllamaRunning()
 	{
 		QTcpSocket sock;
 		sock.connectToHost(QStringLiteral("127.0.0.1"), 11434);
-		return sock.waitForConnected(300 /*ms*/);
+		return sock.waitForConnected(300);
 	}
 	
-	// Launches `ollama serve` detached so it survives the GUI process.
-	// Returns true if the process was started successfully.
 	[[nodiscard]] inline bool startOllama()
 	{
 		return QProcess::startDetached(QStringLiteral("ollama"),
 									   QStringList{QStringLiteral("serve")});
 	}
 	
-	// Blocks until Ollama is reachable, retrying up to maxWaitMs milliseconds.
-	// Returns true when the port is open, false on timeout.
-	[[nodiscard]] inline bool waitForOllama(int maxWaitMs = 8000,
+	[[nodiscard]] inline bool waitForOllama(int maxWaitMs  = 8000,
 											int intervalMs = 300)
 	{
 		const int steps = maxWaitMs / intervalMs;
@@ -945,7 +919,6 @@ int main(int argc, char *argv[])
 								  "and try again."));
 			return 1;
 		}
-		// Give the server time to bind its port before we open the picker.
 		if (!OllamaGui::waitForOllama()) {
 			QMessageBox::warning(
 				nullptr,
