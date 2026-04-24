@@ -1,6 +1,7 @@
 # ollama_gui
 
 A lightweight, single-file Qt6 desktop chat interface for [Ollama](https://ollama.com). No Electron, no Python runtime — just a small C++ binary that talks directly to the local Ollama HTTP API.
+![screenshot](screenshot.png)
 
 ---
 
