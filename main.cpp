@@ -315,7 +315,7 @@ public:
 		outerLayout->setContentsMargins(0, 0, 0, 0);
 		outerLayout->setSpacing(0);
 		
-		// ── Header bar: matches chat pane header exactly ──────────────────
+		// -- Header bar: matches chat pane header exactly ------------------
 		// Uses a plain QWidget so it naturally picks up the window background.
 		auto *headerWidget = new QWidget{this};
 		// Fixed height matches the chat pane's own header widget below.
@@ -333,13 +333,13 @@ public:
 		
 		outerLayout->addWidget(headerWidget);
 		
-		// ── Native horizontal separator ───────────────────────────────────
+		// -- Native horizontal separator -----------------------------------
 		auto *topSep = new QFrame{this};
 		topSep->setFrameShape(QFrame::HLine);
 		topSep->setFrameShadow(QFrame::Sunken);
 		outerLayout->addWidget(topSep);
 		
-		// ── New session button ────────────────────────────────────────────
+		// -- New session button --------------------------------------------
 		auto *btnWidget = new QWidget{this};
 		auto *btnLayout = new QHBoxLayout{btnWidget};
 		btnLayout->setContentsMargins(8, 6, 8, 6);
@@ -347,7 +347,7 @@ public:
 		btnLayout->addWidget(newBtn);
 		outerLayout->addWidget(btnWidget);
 		
-		// ── Session list ──────────────────────────────────────────────────
+		// -- Session list --------------------------------------------------
 		m_listWidget->setAlternatingRowColors(true);
 		m_listWidget->setContextMenuPolicy(Qt::CustomContextMenu);
 		m_listWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -469,7 +469,7 @@ public:
 		mainLayout->setContentsMargins(0, 0, 0, 0);
 		mainLayout->setSpacing(0);
 		
-		// ── Header bar: same fixed height as sidebar header ───────────────
+		// -- Header bar: same fixed height as sidebar header ---------------
 		auto *headerWidget = new QWidget{this};
 		headerWidget->setFixedHeight(40);
 		auto *headerLayout = new QHBoxLayout{headerWidget};
@@ -485,18 +485,18 @@ public:
 		
 		mainLayout->addWidget(headerWidget);
 		
-		// ── Native horizontal separator ───────────────────────────────────
+		// -- Native horizontal separator -----------------------------------
 		auto *sep = new QFrame{this};
 		sep->setFrameShape(QFrame::HLine);
 		sep->setFrameShadow(QFrame::Sunken);
 		mainLayout->addWidget(sep);
 		
-		// ── Chat display ──────────────────────────────────────────────────
+		// -- Chat display --------------------------------------------------
 		m_chatBox->setReadOnly(true);
 		m_chatBox->setFrameShape(QFrame::NoFrame);
 		mainLayout->addWidget(m_chatBox, 1);
 		
-		// ── Input row ─────────────────────────────────────────────────────
+		// -- Input row -----------------------------------------------------
 		auto *inputSep = new QFrame{this};
 		inputSep->setFrameShape(QFrame::HLine);
 		inputSep->setFrameShadow(QFrame::Sunken);
@@ -793,8 +793,19 @@ private slots:
 	
 	void onSessionSelected(const QString &id)
 	{
-		if (!m_currentSessionId.isEmpty())
-			m_store.save(m_chatPane->session());
+		// Don't do anything if it's already the active session
+		// (sidebar reload after delete can re-trigger this with the same id).
+		if (id == m_currentSessionId) return;
+		
+		// Only save if the current session still exists on disk
+		// (it may have just been deleted, in which case we must not re-save it).
+		if (!m_currentSessionId.isEmpty()) {
+			const QVector<Session> existing = m_store.loadAll();
+			const bool stillExists = std::any_of(existing.cbegin(), existing.cend(),
+												 [&](const Session &s) { return s.id == m_currentSessionId; });
+			if (stillExists)
+				m_store.save(m_chatPane->session());
+		}
 		
 		const QVector<Session> sessions = m_store.loadAll();
 		for (const auto &s : sessions) {
@@ -830,14 +841,22 @@ private slots:
 	{
 		m_store.remove(id);
 		
+		// Clear tracked id BEFORE reload() so that any sessionSelected signal
+		// fired during sidebar rebuild doesn't attempt to save the deleted session.
+		if (id == m_currentSessionId)
+			m_currentSessionId.clear();
+		
 		const QVector<Session> remaining = m_store.loadAll();
 		if (remaining.isEmpty()) {
 			createAndLoadNewSession();
 		} else {
-			const bool deletedCurrent = (id == m_currentSessionId);
-			m_sidebar->reload(remaining.first().id);
-			if (deletedCurrent)
+			// Load the session into the chat pane first, then sync the sidebar.
+			// If we did reload() first it would emit sessionSelected which would
+			// call loadSession again — causing a double-load and potential flicker.
+			const bool needsNewPane = m_currentSessionId.isEmpty();
+			if (needsNewPane)
 				loadSession(remaining.first());
+			m_sidebar->reload(remaining.first().id);
 		}
 	}
 	
@@ -906,7 +925,7 @@ int main(int argc, char *argv[])
 {
 	QApplication app{argc, argv};
 	
-	// ── 1. Ensure Ollama is running ────────────────────────────────────────
+	// -- 1. Ensure Ollama is running ----------------------------------------
 	if (!OllamaGui::isOllamaRunning()) {
 		if (!OllamaGui::startOllama()) {
 			QMessageBox::critical(
@@ -931,7 +950,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	
-	// ── 2. Pick model ──────────────────────────────────────────────────────
+	// -- 2. Pick model ------------------------------------------------------
 	QString model;
 	
 	if (argc > 1) {
@@ -943,7 +962,7 @@ int main(int argc, char *argv[])
 		model = picker.selectedModel();
 	}
 	
-	// ── 3. Open main window ────────────────────────────────────────────────
+	// -- 3. Open main window ------------------------------------------------
 	MainWindow window{std::move(model)};
 	window.show();
 	
