@@ -41,7 +41,9 @@
 #include <QFrame>
 #include <QTimer>
 #include <QTextDocument>
-
+#include <QProcess>
+#include <QTcpSocket>
+#include <QThread>
 #include <string_view>
 
 // ---------------------------------------------------------------------------
@@ -883,6 +885,42 @@ private:
 	QString         m_initialModel;
 	QString         m_currentSessionId;
 };
+// ---------------------------------------------------------------------------
+// Helpers — Ollama process management
+// ---------------------------------------------------------------------------
+
+namespace OllamaGui {
+	
+	// Returns true if Ollama's HTTP port (11434) is already accepting connections.
+	[[nodiscard]] inline bool isOllamaRunning()
+	{
+		QTcpSocket sock;
+		sock.connectToHost(QStringLiteral("127.0.0.1"), 11434);
+		return sock.waitForConnected(300 /*ms*/);
+	}
+	
+	// Launches `ollama serve` detached so it survives the GUI process.
+	// Returns true if the process was started successfully.
+	[[nodiscard]] inline bool startOllama()
+	{
+		return QProcess::startDetached(QStringLiteral("ollama"),
+									   QStringList{QStringLiteral("serve")});
+	}
+	
+	// Blocks until Ollama is reachable, retrying up to maxWaitMs milliseconds.
+	// Returns true when the port is open, false on timeout.
+	[[nodiscard]] inline bool waitForOllama(int maxWaitMs = 8000,
+											int intervalMs = 300)
+	{
+		const int steps = maxWaitMs / intervalMs;
+		for (int i = 0; i < steps; ++i) {
+			if (isOllamaRunning()) return true;
+			QThread::msleep(static_cast<unsigned long>(intervalMs));
+		}
+		return false;
+	}
+	
+} // namespace OllamaGui
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -894,6 +932,33 @@ int main(int argc, char *argv[])
 {
 	QApplication app{argc, argv};
 	
+	// ── 1. Ensure Ollama is running ────────────────────────────────────────
+	if (!OllamaGui::isOllamaRunning()) {
+		if (!OllamaGui::startOllama()) {
+			QMessageBox::critical(
+				nullptr,
+				QApplication::translate("main", "Ollama not found"),
+								  QApplication::translate(
+									  "main",
+								  "Could not start Ollama. "
+								  "Make sure the \xe2\x80\x98ollama\xe2\x80\x99 binary is on your PATH "
+								  "and try again."));
+			return 1;
+		}
+		// Give the server time to bind its port before we open the picker.
+		if (!OllamaGui::waitForOllama()) {
+			QMessageBox::warning(
+				nullptr,
+				QApplication::translate("main", "Ollama slow to start"),
+								 QApplication::translate(
+									 "main",
+								 "Ollama was launched but did not respond within 8 seconds. "
+								 "The model picker may show no models — "
+								 "you can still type a model name manually."));
+		}
+	}
+	
+	// ── 2. Pick model ──────────────────────────────────────────────────────
 	QString model;
 	
 	if (argc > 1) {
@@ -905,6 +970,7 @@ int main(int argc, char *argv[])
 		model = picker.selectedModel();
 	}
 	
+	// ── 3. Open main window ────────────────────────────────────────────────
 	MainWindow window{std::move(model)};
 	window.show();
 	
